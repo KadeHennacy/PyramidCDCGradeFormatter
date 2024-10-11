@@ -20,8 +20,8 @@ def load_file():
     # 23: Get the format setting user has selected from the dropdown combo
     format_setting = format_combo.get()
     
-    # 24: If the setting is Gmetrix, only accept CSV, else except either format
-    if format_setting == "Gmetrix Raw Data":
+    # 24: If the setting is Gmetrix, only accept CSV, else accept either format
+    if format_setting in ["Gmetrix Raw Data", "Gmetrix for CTRL-R Import"]:
         file_type = [("CSV files", "*.csv")]
     else:  # 25: General Formatting
         file_type = [("Excel files", "*.xlsx"), ("CSV files", "*.csv")]
@@ -35,34 +35,49 @@ def load_file():
 
 # 28: This function is called when save_button is pressed
 def save_file():
-    # 29: This determines whether to read as CSV or Excel and how to process it. Step into this for comment #30
+    # Process the file based on the selected format setting
     process_file()
     if 'df' not in globals():
         messagebox.showerror("Error", "No processed data available. Please load and process a CSV file first.")
         return
 
-    # 41: This creates a popup to ask the user where to save the file and what to name it. 
+    # Prompt the user to select the output file path
     output_file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
     if not output_file_path:
         return
 
-    # 42: Depending on the file type, we use openpyxl to create a workbook and worksheet. Then we populate its cells from the Pandas dataframe.
-    if file_path.endswith('.xlsx'):
-        wb = openpyxl.load_workbook(file_path)
-        ws = wb.active
+    # Create a new workbook and worksheet
+    wb = openpyxl.Workbook()
+    ws = wb.active
+
+    # Get the format setting
+    format_setting = format_combo.get()
+
+    if format_setting == "Gmetrix for CTRL-R Import":
+        # Write and format the column headers
+        header_font = Font(bold=True)
+        header_alignment = Alignment(horizontal='center', vertical='center')
+        for col_idx, col_name in enumerate(df.columns, 1):
+            cell = ws.cell(row=1, column=col_idx, value=col_name)
+            cell.font = header_font
+            cell.alignment = header_alignment
+
+        # Write the data rows starting from row 2
+        start_row = 2
     else:
-        wb = openpyxl.Workbook()
-        ws = wb.active
+        # For other formats, start writing data from the first row
+        start_row = 1
 
-
-    for row_idx, row in enumerate(df.itertuples(index=False, name=None), 1):
+    # Write the data rows
+    for row_idx, row in enumerate(df.itertuples(index=False, name=None), start_row):
         for col_idx, value in enumerate(row, 1):
             ws.cell(row=row_idx, column=col_idx, value=value)
 
-    # 43: This applies the general formatting like word wrap, centering text, and resizing columns. Step into this for comment  #44
-    general_formatting(ws)
+    # Apply general formatting if needed
+    if "for CTRL-R Import" not in format_setting:
+        general_formatting(ws)
 
-    # 50: Save the file and display success message
+    # Save the workbook to the specified output file path
     wb.save(output_file_path)
     messagebox.showinfo("Success", f"Data processed and saved to {output_file_path}")
 
@@ -84,6 +99,8 @@ def process_file():
     # 33: We run general formatting regardless, but Gmetrix requires sorting. Step into process_gmetrix for comment #34
     if format_setting == "Gmetrix Raw Data":
         process_gmetrix()
+    elif format_setting == "Gmetrix for CTRL-R Import":
+        process_ctrlr_import()
 
 def process_gmetrix():
     global df
@@ -178,6 +195,179 @@ def general_formatting(ws):
         elif resize_col_var.get() == 1:
             ws.column_dimensions[column].width = column_width_var.get()
 
+def process_ctrlr_import():
+    global df
+
+    print("Starting process_ctrlr_import()")
+    current_course_name = None
+    output_data = []
+    assessment_row = None
+    header_row = None
+
+    num_rows = len(df)
+    print(f"Total number of rows in df: {num_rows}")
+    row_idx = 0
+    while row_idx < num_rows:
+        row = df.iloc[row_idx]
+        # Convert row to list of strings
+        row_values = [str(cell).strip() if pd.notnull(cell) else '' for cell in row]
+        print(f"Processing row {row_idx}: {row_values}")
+
+        # Skip empty rows
+        if not any(cell for cell in row_values):
+            row_idx += 1
+            continue
+
+        # Check if the first cell contains 'Domain'
+        if row_values[0] and 'Domain' in row_values[0]:
+            current_course_name = row_values[0].strip()
+            print(f"Current Course: {current_course_name}")
+            # Reset assessment_row, header_row, assessment_columns
+            assessment_row = None
+            header_row = None
+            assessment_columns = {}
+            row_idx += 1
+            continue
+
+        # Skip 'Lesson' rows
+        if any('Lesson' in cell for cell in row_values):
+            row_idx += 1
+            continue
+
+        # Identify header and assessment rows
+        if any(cell in ['Video Progress', 'Test Score', 'Date Completed', 'Minutes Spent', 'Score'] for cell in row_values):
+            # This is the assessment_row, and the previous non-empty row is header_row
+            assessment_row = row_values
+            # Find header_row by looking back
+            temp_row_idx = row_idx - 1
+            while temp_row_idx >= 0:
+                temp_row = df.iloc[temp_row_idx]
+                temp_row_values = [str(cell).strip() if pd.notnull(cell) else '' for cell in temp_row]
+                if any(cell.strip() for cell in temp_row_values):
+                    header_row = temp_row_values
+                    print(f"Found header_row at index {temp_row_idx}: {header_row}")
+                    break
+                temp_row_idx -= 1
+            else:
+                header_row = [''] * len(assessment_row)
+            # Combine headers
+            full_headers = []
+            for h, a in zip(header_row, assessment_row):
+                h = h.strip()
+                a = a.strip()
+                if h and a:
+                    full_header = f"{h} {a}".strip()
+                elif h:
+                    full_header = h
+                elif a:
+                    full_header = a
+                else:
+                    full_header = ''
+                full_headers.append(full_header)
+            print(f"Combined headers: {full_headers}")
+            # Map assessment names to columns
+            assessment_columns = {}
+            for idx, header in enumerate(full_headers):
+                if 'Test Score' in header or 'Date Completed' in header:
+                    # Extract assessment name
+                    assessment_name = header.replace('Test Score', '').replace('Date Completed', '').strip()
+                    assessment_name = re.sub(r'\s+', ' ', assessment_name)  # Normalize spaces
+                    if assessment_name not in assessment_columns:
+                        assessment_columns[assessment_name] = {}
+                    if 'Test Score' in header:
+                        assessment_columns[assessment_name]['Test Score'] = idx
+                    if 'Date Completed' in header:
+                        assessment_columns[assessment_name]['Date Completed'] = idx
+            print(f"Assessment columns mapping: {assessment_columns}")
+            row_idx += 1
+            continue
+
+        # Process student data rows
+        if assessment_row is not None and header_row is not None:
+            student_name = row_values[0]
+            if student_name and not any(k in student_name for k in ['Domain', 'Test Score', 'Date Completed', 'Video Progress', 'Minutes Spent', 'Score', 'Lesson']):
+                # Process student data
+                print(f"Processing student: {student_name}")
+                student_data = {
+                    'Students': student_name,
+                    'Course Name': current_course_name,
+                    'Status': '',
+                    'Score': '',
+                    'Student Course Name': '',
+                    'Course Completion Date': ''
+                }
+
+                # Search for post-assessments
+                post_assessments = [name for name in assessment_columns.keys() if 'Post-Assessment' in name or ('Post' in name and 'Assessment' in name)]
+                if not post_assessments:
+                    # Try alternative matching if 'Post-Assessment' not found
+                    post_assessments = [name for name in assessment_columns.keys() if 'Post' in name or 'Assessment' in name]
+
+                if post_assessments:
+                    # Use the first post-assessment found
+                    post_assessment_name = post_assessments[0]
+                    score_index = assessment_columns[post_assessment_name].get('Test Score')
+                    date_completed_index = assessment_columns[post_assessment_name].get('Date Completed')
+
+                    # Extract score
+                    if score_index is not None and score_index < len(row_values):
+                        score_cell = row_values[score_index]
+                        if score_cell.endswith('%'):
+                            score_value = score_cell.rstrip('%')
+                        else:
+                            score_value = score_cell
+                        try:
+                            score_value = float(score_value)
+                        except ValueError:
+                            score_value = 0.0
+                        student_data['Score'] = score_value
+                    else:
+                        score_value = 0.0
+
+                    # Extract completion date
+                    if date_completed_index is not None and date_completed_index < len(row_values):
+                        date_completed = row_values[date_completed_index]
+                        student_data['Course Completion Date'] = date_completed
+                    else:
+                        date_completed = ''
+
+                    # Determine status
+                    passing_percentage = passing_percentage_var.get()
+                    if score_value >= passing_percentage:
+                        status = 'Passed'
+                    elif 0 < score_value < passing_percentage:
+                        status = 'Failed'
+                    else:
+                        # Check for any completion dates in other assessments
+                        dates_completed = [
+                            row_values[idx]
+                            for assessment in assessment_columns.values()
+                            for key, idx in assessment.items()
+                            if key == 'Date Completed' and idx < len(row_values) and row_values[idx]
+                        ]
+                        status = 'In Progress' if dates_completed else 'Not Started'
+                    student_data['Status'] = status
+                    student_data['Student Course Name'] = f"{student_name}-{current_course_name}"
+
+                    # Append to output data
+                    output_data.append(student_data)
+                else:
+                    # No post-assessment found, skip or handle accordingly
+                    print(f"No post-assessment found for {student_name} in course {current_course_name}")
+
+            row_idx += 1
+            continue
+
+        row_idx += 1
+
+    # Create DataFrame from output_data
+    df_output = pd.DataFrame(output_data)
+
+    existing_columns = [col for col in ['Students', 'Course Name', 'Status', 'Score', 'Student Course Name', 'Course Completion Date'] if col in df_output.columns]
+    df_output = df_output[existing_columns]
+
+    df = df_output
+
 # 3: This is where we initialize the main window of the app "root".
 # All elements will be attached to this root
 root = tk.Tk()
@@ -215,7 +405,7 @@ format_setting_label.pack(side=tk.LEFT, padx=10)
 
 # 9: This defines the 2 format settings the app supports. The value here determines what update_instructions() will set additional_instruction_label to This determines if "Sort Order" setting is supported. This determines if XLSX files may be loaded
 format_combo = Combobox(frame_top, state="readonly", width=20)
-format_combo['values'] = ("Gmetrix Raw Data", "General Formatting")
+format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import","General Formatting")
 format_combo.current(1)
 format_combo.pack(side=tk.LEFT, padx=10)
 
@@ -239,10 +429,40 @@ def update_instruction(event=None):
         additional_instruction_label.config(text="Gmetrix Raw Data - This setting takes a CSV Gmetrix student progress report as input. It removes the \"Minutes Spent\" and \"Score\" columns, sizes columns to 18, and centers and wraps all text, and outputs a XLSX file. To sort the rows by post-assessment score, select an option from the Sort Order dropdown. Descending places the highest scores at the top of the sheet")
         sort_order_label.grid(row=0, column=0, padx=(10, 2), sticky='e')
         sort_order_combo.grid(row=0, column=1, padx=(2, 10), sticky='w')
+        # Show the UI elements
+        word_wrap_check.grid(row=0, column=2, padx=(10, 2), sticky='w')
+        center_text_check.grid(row=0, column=3, padx=(2, 2), sticky='w')
+        autosize_col_check.grid(row=0, column=4, padx=(2, 2), sticky='w')
+        resize_col_check.grid(row=0, column=5, padx=(2, 2), sticky='w')
+        column_width_spin.grid(row=0, column=6, padx=(2, 2), sticky='w')
+        px_label.grid(row=0, column=7, sticky='w')
+        passing_percentage_label.grid_remove()
+        passing_percentage_spin.grid_remove()
     elif format_combo.get() == "General Formatting":
         additional_instruction_label.config(text="General Formatting - This setting takes any CSV or XLSX file and sizes columns to 18 and centers and wraps text")
         sort_order_label.grid_remove()
         sort_order_combo.grid_remove()
+        # Show the UI elements
+        word_wrap_check.grid(row=0, column=2, padx=(10, 2), sticky='w')
+        center_text_check.grid(row=0, column=3, padx=(2, 2), sticky='w')
+        autosize_col_check.grid(row=0, column=4, padx=(2, 2), sticky='w')
+        resize_col_check.grid(row=0, column=5, padx=(2, 2), sticky='w')
+        column_width_spin.grid(row=0, column=6, padx=(2, 2), sticky='w')
+        px_label.grid(row=0, column=7, sticky='w')
+        passing_percentage_label.grid_remove()
+        passing_percentage_spin.grid_remove()
+    elif format_combo.get() == "Gmetrix for CTRL-R Import":
+        additional_instruction_label.config(text="Gmetrix for CTRL-R Import - This setting takes a CSV Gmetrix student progress report as input. It removes and combines columns to create a file combatible with the import feature on the CTRL-R All Student Grades report. ")
+        sort_order_label.grid_remove()
+        sort_order_combo.grid_remove()
+        word_wrap_check.grid_remove()
+        center_text_check.grid_remove()
+        autosize_col_check.grid_remove()
+        resize_col_check.grid_remove()
+        column_width_spin.grid_remove()
+        px_label.grid_remove()
+        passing_percentage_label.grid(row=0, column=0, padx=(10, 2), sticky='e')
+        passing_percentage_spin.grid(row=0, column=1, padx=(2, 10), sticky='w')
 
 # 14: If the user selects the "Resize Columns" checkbutton we add a spinbox for the user to select how many points wide they want the columns. We also need to disable "Autosize" columns because the user can only choose one or the other. If resize_col_var.get() == 1 that means  "Resize Columns" is selected, so we show the spinbox for column with, and we show a label for it, and we deselect the "Autosize" checkbutton by setting it to 0. Otherwise, we hide the column size spinbox and points label.
 def handle_resize_checkbutton():
@@ -268,6 +488,7 @@ center_text_var = IntVar(value=1)
 autosize_col_var = IntVar(value=1)
 resize_col_var = IntVar(value=0)
 column_width_var = IntVar(value=18)
+passing_percentage_var = IntVar(value=70)
 
 # 17 Initialize UI inputs. Attach them to frame_sort (middle). Link any functions that need to be ran on-change with "command" argument
 word_wrap_check = Checkbutton(frame_sort, text="Word Wrap", variable=word_wrap_var)
@@ -276,6 +497,8 @@ resize_col_check = Checkbutton(frame_sort, text="Resize Columns", variable=resiz
 autosize_col_check = Checkbutton(frame_sort, text="Autosize Columns", variable=autosize_col_var, command=handle_autosize_checkbutton)
 column_width_spin = Spinbox(frame_sort, from_=10, to=50, textvariable=column_width_var, width=5)
 px_label = Label(frame_sort, text="Points")
+passing_percentage_label = Label(frame_sort, text="Passing Percentage")
+passing_percentage_spin = Spinbox(frame_sort, from_=0, to=100, textvariable=passing_percentage_var, width=5)
 
 # 18 Set position of the elments with .grid() to all be on a row. Set padding so they look evenly spaced. .grid() is similar to .pack() in the way it attaches the element to the frame and makes it visible, but .grid() uses rows and columns to give more control over positioning.
 word_wrap_check.grid(row=0, column=2, padx=(10, 2), sticky='w')
@@ -284,6 +507,8 @@ autosize_col_check.grid(row=0, column=4, padx=(2, 2), sticky='w')
 resize_col_check.grid(row=0, column=5, padx=(2, 2), sticky='w')
 column_width_spin.grid(row=0, column=6, padx=(2, 2), sticky='w')
 px_label.grid(row=0, column=7, sticky='w')
+passing_percentage_label.grid(row=0, column=8, padx=(10, 2), sticky='w')
+passing_percentage_spin.grid(row=0, column=9, padx=(2, 2), sticky='w')
 
 # 19 Any time a different format setting is selected, we call update_instruction to display relevant directions
 format_combo.bind("<<ComboboxSelected>>", update_instruction)
