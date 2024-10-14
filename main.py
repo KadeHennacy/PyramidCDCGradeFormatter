@@ -221,6 +221,8 @@ def process_ctrlr_import():
         # Check if the first cell contains 'Domain'
         if row_values[0] and 'Domain' in row_values[0]:
             current_course_name = row_values[0].strip()
+            # Remove 'Domain X: ' prefix
+            current_course_name = re.sub(r'^Domain \d+:\s*', '', current_course_name)
             print(f"Current Course: {current_course_name}")
             # Reset assessment_row, header_row, assessment_columns
             assessment_row = None
@@ -268,16 +270,16 @@ def process_ctrlr_import():
             # Map assessment names to columns
             assessment_columns = {}
             for idx, header in enumerate(full_headers):
-                if 'Test Score' in header or 'Date Completed' in header:
+                if 'Test Score' in header:
                     # Extract assessment name
-                    assessment_name = header.replace('Test Score', '').replace('Date Completed', '').strip()
+                    assessment_name = header.replace('Test Score', '').strip()
                     assessment_name = re.sub(r'\s+', ' ', assessment_name)  # Normalize spaces
                     if assessment_name not in assessment_columns:
                         assessment_columns[assessment_name] = {}
-                    if 'Test Score' in header:
-                        assessment_columns[assessment_name]['Test Score'] = idx
-                    if 'Date Completed' in header:
-                        assessment_columns[assessment_name]['Date Completed'] = idx
+                    assessment_columns[assessment_name]['Test Score'] = idx
+                    # Assume 'Date Completed' is the next column
+                    if idx + 1 < len(full_headers):
+                        assessment_columns[assessment_name]['Date Completed'] = idx + 1
             print(f"Assessment columns mapping: {assessment_columns}")
             row_idx += 1
             continue
