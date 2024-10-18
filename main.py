@@ -21,7 +21,9 @@ def load_file():
     format_setting = format_combo.get()
     
     # 24: If the setting is Gmetrix, only accept CSV, else accept either format
-    if format_setting in ["Gmetrix Raw Data", "Gmetrix for CTRL-R Import"]:
+    if format_setting == "Gmetrix for CTRL-R Import":
+        file_type = [("Excel files", "*.xlsx;*.xls")]
+    elif format_setting == "Gmetrix Raw Data":
         file_type = [("CSV files", "*.csv")]
     else:  # 25: General Formatting
         file_type = [("Excel files", "*.xlsx"), ("CSV files", "*.csv")]
@@ -87,12 +89,15 @@ def process_file():
     format_setting = format_combo.get()
 
     try:
-        if file_path.endswith('.csv'):
-            # 31: Pandas can only read CSVs with an equal amount of commas in each row. Gmetrix export is missing these because it doesn't include commas for empty cells. Step into sanitize_csv() for #32
-            sanitize_csv()
-            df = pd.read_csv(file_path, header=None)
+        if format_setting == "Gmetrix for CTRL-R Import":
+            # Read the Excel file with headers
+            df = pd.read_excel(file_path)
         else:
-            df = pd.read_excel(file_path, header=None)
+            if file_path.endswith('.csv'):
+                sanitize_csv()
+                df = pd.read_csv(file_path, header=None)
+            else:
+                df = pd.read_excel(file_path, header=None)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to process the file\n{e}")
         return
@@ -198,176 +203,40 @@ def general_formatting(ws):
 def process_ctrlr_import():
     global df
 
-    print("Starting process_ctrlr_import()")
-    current_course_name = None
-    output_data = []
-    assessment_row = None
-    header_row = None
+    # Check if the dataframe is loaded
+    if df is None:
+        messagebox.showerror("Error", "No file loaded. Please load an Excel file first.")
+        return
 
-    num_rows = len(df)
-    print(f"Total number of rows in df: {num_rows}")
-    row_idx = 0
-    while row_idx < num_rows:
-        row = df.iloc[row_idx]
-        # Convert row to list of strings
-        row_values = [str(cell).strip() if pd.notnull(cell) else '' for cell in row]
-        print(f"Processing row {row_idx}: {row_values}")
+    # Ensure the required columns are present
+    required_columns = ['Course Name', 'First Name', 'Last Name', 'Score']
+    if not all(col in df.columns for col in required_columns):
+        messagebox.showerror("Error", "Input file does not contain the required columns.")
+        return
 
-        # Skip empty rows
-        if not any(cell for cell in row_values):
-            row_idx += 1
-            continue
+    # Remove rows where 'Course Name', 'First Name', or 'Last Name' are missing
+    df = df.dropna(subset=['Course Name', 'First Name', 'Last Name'])
 
-        # Check if the first cell contains 'Domain'
-        if row_values[0] and 'Domain' in row_values[0]:
-            current_course_name = row_values[0].strip()
-            # Remove 'Domain X: ' prefix
-            current_course_name = re.sub(r'^Domain \d+:\s*', '', current_course_name)
-            print(f"Current Course: {current_course_name}")
-            # Reset assessment_row, header_row, assessment_columns
-            assessment_row = None
-            header_row = None
-            assessment_columns = {}
-            row_idx += 1
-            continue
+    # Combine 'First Name' and 'Last Name' into 'Student Course Name'
+    df['Student Course Name'] = df['First Name'].astype(str).str.strip() + ' ' + df['Last Name'].astype(str).str.strip()
 
-        # Skip 'Lesson' rows
-        if any('Lesson' in cell for cell in row_values):
-            row_idx += 1
-            continue
+    # Remove '%' from 'Score' and convert to numeric
+    df['Numeric Score'] = df['Score'].astype(str).str.rstrip('%').astype(float)
 
-        # Identify header and assessment rows
-        if any(cell in ['Video Progress', 'Test Score', 'Date Completed', 'Minutes Spent', 'Score'] for cell in row_values):
-            # This is the assessment_row, and the previous non-empty row is header_row
-            assessment_row = row_values
-            # Find header_row by looking back
-            temp_row_idx = row_idx - 1
-            while temp_row_idx >= 0:
-                temp_row = df.iloc[temp_row_idx]
-                temp_row_values = [str(cell).strip() if pd.notnull(cell) else '' for cell in temp_row]
-                if any(cell.strip() for cell in temp_row_values):
-                    header_row = temp_row_values
-                    print(f"Found header_row at index {temp_row_idx}: {header_row}")
-                    break
-                temp_row_idx -= 1
-            else:
-                header_row = [''] * len(assessment_row)
-            # Combine headers
-            full_headers = []
-            for h, a in zip(header_row, assessment_row):
-                h = h.strip()
-                a = a.strip()
-                if h and a:
-                    full_header = f"{h} {a}".strip()
-                elif h:
-                    full_header = h
-                elif a:
-                    full_header = a
-                else:
-                    full_header = ''
-                full_headers.append(full_header)
-            print(f"Combined headers: {full_headers}")
-            # Map assessment names to columns
-            assessment_columns = {}
-            for idx, header in enumerate(full_headers):
-                if 'Test Score' in header:
-                    # Extract assessment name
-                    assessment_name = header.replace('Test Score', '').strip()
-                    assessment_name = re.sub(r'\s+', ' ', assessment_name)  # Normalize spaces
-                    if assessment_name not in assessment_columns:
-                        assessment_columns[assessment_name] = {}
-                    assessment_columns[assessment_name]['Test Score'] = idx
-                    # Assume 'Date Completed' is the next column
-                    if idx + 1 < len(full_headers):
-                        assessment_columns[assessment_name]['Date Completed'] = idx + 1
-            print(f"Assessment columns mapping: {assessment_columns}")
-            row_idx += 1
-            continue
+    # Determine 'Status' based on 'Numeric Score' and passing percentage
+    passing_percentage = passing_percentage_var.get()
+    df['Status'] = df['Numeric Score'].apply(lambda x: 'Complete' if x >= passing_percentage else 'In Progress')
 
-        # Process student data rows
-        if assessment_row is not None and header_row is not None:
-            student_name = row_values[0]
-            if student_name and not any(k in student_name for k in ['Domain', 'Test Score', 'Date Completed', 'Video Progress', 'Minutes Spent', 'Score', 'Lesson']):
-                # Process student data
-                print(f"Processing student: {student_name}")
-                student_data = {
-                    'Students': student_name,
-                    'Course Name': current_course_name,
-                    'Status': '',
-                    'Score': '',
-                    'Student Course Name': '',
-                    'Course Completion Date': ''
-                }
+    # 'Course Completion Date' is not available in the input; set it as blank
+    df['Course Completion Date'] = ''
 
-                # Search for post-assessments
-                post_assessments = [name for name in assessment_columns.keys() if 'Post-Assessment' in name or ('Post' in name and 'Assessment' in name)]
-                if not post_assessments:
-                    # Try alternative matching if 'Post-Assessment' not found
-                    post_assessments = [name for name in assessment_columns.keys() if 'Post' in name or 'Assessment' in name]
+    # Select and reorder the required columns
+    df_output = df[['Course Name', 'Status', 'Numeric Score', 'Student Course Name', 'Course Completion Date']]
 
-                if post_assessments:
-                    # Use the first post-assessment found
-                    post_assessment_name = post_assessments[0]
-                    score_index = assessment_columns[post_assessment_name].get('Test Score')
-                    date_completed_index = assessment_columns[post_assessment_name].get('Date Completed')
+    # Rename 'Numeric Score' back to 'Score'
+    df_output = df_output.rename(columns={'Numeric Score': 'Score'})
 
-                    # Extract score
-                    if score_index is not None and score_index < len(row_values):
-                        score_cell = row_values[score_index]
-                        if score_cell.endswith('%'):
-                            score_value = score_cell.rstrip('%')
-                        else:
-                            score_value = score_cell
-                        try:
-                            score_value = float(score_value)
-                        except ValueError:
-                            score_value = 0.0
-                        student_data['Score'] = score_value
-                    else:
-                        score_value = 0.0
-
-                    # Extract completion date
-                    if date_completed_index is not None and date_completed_index < len(row_values):
-                        date_completed = row_values[date_completed_index]
-                        student_data['Course Completion Date'] = date_completed
-                    else:
-                        date_completed = ''
-
-                    # Determine status
-                    passing_percentage = passing_percentage_var.get()
-                    if score_value >= passing_percentage:
-                        status = 'Passed'
-                    elif 0 < score_value < passing_percentage:
-                        status = 'Failed'
-                    else:
-                        # Check for any completion dates in other assessments
-                        dates_completed = [
-                            row_values[idx]
-                            for assessment in assessment_columns.values()
-                            for key, idx in assessment.items()
-                            if key == 'Date Completed' and idx < len(row_values) and row_values[idx]
-                        ]
-                        status = 'In Progress' if dates_completed else 'Not Started'
-                    student_data['Status'] = status
-                    student_data['Student Course Name'] = f"{student_name}-{current_course_name}"
-
-                    # Append to output data
-                    output_data.append(student_data)
-                else:
-                    # No post-assessment found, skip or handle accordingly
-                    print(f"No post-assessment found for {student_name} in course {current_course_name}")
-
-            row_idx += 1
-            continue
-
-        row_idx += 1
-
-    # Create DataFrame from output_data
-    df_output = pd.DataFrame(output_data)
-
-    existing_columns = [col for col in ['Students', 'Course Name', 'Status', 'Score', 'Student Course Name', 'Course Completion Date'] if col in df_output.columns]
-    df_output = df_output[existing_columns]
-
+    # Assign the processed dataframe back to df
     df = df_output
 
 # 3: This is where we initialize the main window of the app "root".
