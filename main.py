@@ -80,14 +80,12 @@ def save_file():
     # Save the workbook to the specified output file path
     wb.save(output_file_path)
     messagebox.showinfo("Success", f"Data processed and saved to {output_file_path}")
-
 def process_file():
-    # 30: We declare df (Dataframe) as a global variable so we can access it anywhere in this code. We use Pandas to create this from either a CSV or XLXS file.
     global df, file_path
     format_setting = format_combo.get()
 
     try:
-        if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import"]:
+        if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "NorthStar for CTRL-R Import"]:
             # Read the Excel file with headers
             df = pd.read_excel(file_path)
         else:
@@ -99,13 +97,16 @@ def process_file():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to process the file\n{e}")
         return
-    # 33: We run general formatting regardless, but Gmetrix requires sorting. Step into process_gmetrix for comment #34
+
     if format_setting == "Gmetrix Raw Data":
         process_gmetrix()
     elif format_setting == "Gmetrix for CTRL-R Import":
         process_ctrlr_import()
     elif format_setting == "NFR Rise Up for CTRL-R Import":
         process_nfr_ctrlr_import()
+    elif format_setting == "NorthStar for CTRL-R Import":
+        process_northstar_ctrlr_import()
+
 
 def process_gmetrix():
     global df
@@ -282,6 +283,52 @@ def process_nfr_ctrlr_import():
 
     df = df_output
 
+def process_northstar_ctrlr_import():
+    global df
+
+    # Check if the dataframe is loaded
+    if df is None:
+        messagebox.showerror("Error", "No file loaded. Please load an Excel file first.")
+        return
+
+    # Assume that the first column contains the student names
+    df.rename(columns={df.columns[0]: 'Students'}, inplace=True)
+
+    # Identify 'Certificate Earned' columns
+    certificate_columns = [col for col in df.columns if 'Certificate Earned' in col]
+
+    if not certificate_columns:
+        messagebox.showerror("Error", "No 'Certificate Earned' columns found in the input file.")
+        return
+
+    # Count total certificates earned per student
+    df['Total Certificates'] = df[certificate_columns].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
+
+    # Set 'Exam Score' to 'Passed' or 'Failed' based on total certificates
+    df['Exam Score'] = df['Total Certificates'].apply(lambda x: 'Passed' if x >= 5 else 'Failed')
+
+    # Set 'Status' based on 'Exam Score'
+    df['Status'] = df['Exam Score'].apply(lambda x: 'Complete' if x == 'Passed' else 'In Progress')
+
+    # 'Course Name' can be set to 'NorthStar'
+    df['Course Name'] = 'NorthStar'
+
+    # 'Student Course Name' is 'Student Name - Course Name'
+    df['Student Course Name'] = df['Students'] + ' - ' + df['Course Name']
+
+    # 'Certificates Earned' can be left blank or you can include the total count
+    df['Certificates Earned'] = df['Total Certificates'].astype(int)
+
+    # 'Course Completion Date' can be set as blank or use a specific date if available
+    df['Course Completion Date'] = ''
+
+    # Select and reorder the required columns
+    df_output = df[['Students', 'Course Name', 'Status', 'Exam Score', 'Certificates Earned', 'Course Completion Date', 'Student Course Name']]
+
+    # Assign the processed dataframe back to df
+    df = df_output
+
+
 # 3: This is where we initialize the main window of the app "root".
 # All elements will be attached to this root
 root = tk.Tk()
@@ -319,7 +366,8 @@ format_setting_label.pack(side=tk.LEFT, padx=10)
 
 # 9: This defines the 2 format settings the app supports. The value here determines what update_instructions() will set additional_instruction_label to This determines if "Sort Order" setting is supported. This determines if XLSX files may be loaded
 format_combo = Combobox(frame_top, state="readonly", width=20)
-format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "General Formatting")
+format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "NorthStar for CTRL-R Import", "General Formatting")
+
 format_combo.current(1)
 format_combo.pack(side=tk.LEFT, padx=10)
 
@@ -379,6 +427,19 @@ def update_instruction(event=None):
         passing_percentage_spin.grid(row=0, column=1, padx=(2, 10), sticky='w')
     elif format_combo.get() == "NFR Rise Up for CTRL-R Import":
         additional_instruction_label.config(text="NFR Rise Up for CTRL-R Import - This setting takes an Excel file exported from the NFR Rise Up platform and formats it for CTRL-R import. It processes Exam and Exam Retest entries, combines columns, and creates a compatible file.")
+        # Hide UI elements not needed
+        sort_order_label.grid_remove()
+        sort_order_combo.grid_remove()
+        word_wrap_check.grid_remove()
+        center_text_check.grid_remove()
+        autosize_col_check.grid_remove()
+        resize_col_check.grid_remove()
+        column_width_spin.grid_remove()
+        px_label.grid_remove()
+        passing_percentage_label.grid_remove()
+        passing_percentage_spin.grid_remove()
+    elif format_combo.get() == "NorthStar for CTRL-R Import":
+        additional_instruction_label.config(text="NorthStar for CTRL-R Import - This setting processes a NorthStar exported Excel file. It counts the total 'Certificate Earned' columns per student, sets the 'Exam Score' to 'Passed' if the student has earned 5 or more certificates, and updates the 'Status' accordingly.")
         # Hide UI elements not needed
         sort_order_label.grid_remove()
         sort_order_combo.grid_remove()
