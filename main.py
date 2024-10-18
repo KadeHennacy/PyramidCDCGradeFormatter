@@ -53,7 +53,7 @@ def save_file():
     # Get the format setting
     format_setting = format_combo.get()
 
-    if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import"]:
+    if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "Northstar for CTRL-R Import"]:
         # Write and format the column headers
         header_font = Font(bold=True)
         header_alignment = Alignment(horizontal='center', vertical='center')
@@ -80,12 +80,13 @@ def save_file():
     # Save the workbook to the specified output file path
     wb.save(output_file_path)
     messagebox.showinfo("Success", f"Data processed and saved to {output_file_path}")
+
 def process_file():
     global df, file_path
     format_setting = format_combo.get()
 
     try:
-        if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "NorthStar for CTRL-R Import"]:
+        if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "Northstar for CTRL-R Import"]:
             # Read the Excel file with headers
             df = pd.read_excel(file_path)
         else:
@@ -104,7 +105,7 @@ def process_file():
         process_ctrlr_import()
     elif format_setting == "NFR Rise Up for CTRL-R Import":
         process_nfr_ctrlr_import()
-    elif format_setting == "NorthStar for CTRL-R Import":
+    elif format_setting == "Northstar for CTRL-R Import":
         process_northstar_ctrlr_import()
 
 
@@ -200,6 +201,7 @@ def general_formatting(ws):
         # 49: Manually size column to user defined width if manual resize is active. Return to save_file() for #50
         elif resize_col_var.get() == 1:
             ws.column_dimensions[column].width = column_width_var.get()
+
 def process_ctrlr_import():
     global df
 
@@ -286,13 +288,17 @@ def process_nfr_ctrlr_import():
 def process_northstar_ctrlr_import():
     global df
 
-    # Check if the dataframe is loaded
     if df is None:
         messagebox.showerror("Error", "No file loaded. Please load an Excel file first.")
         return
 
-    # Assume that the first column contains the student names
-    df.rename(columns={df.columns[0]: 'Students'}, inplace=True)
+    required_columns = ['First Name', 'Last Name']
+    if not all(col in df.columns for col in required_columns):
+        messagebox.showerror("Error", "Input file does not contain 'First Name' and 'Last Name' columns.")
+        return
+
+    # Combine 'First Name' and 'Last Name' into 'Students'
+    df['Students'] = df['First Name'].astype(str).str.strip() + ' ' + df['Last Name'].astype(str).str.strip()
 
     # Identify 'Certificate Earned' columns
     certificate_columns = [col for col in df.columns if 'Certificate Earned' in col]
@@ -310,16 +316,16 @@ def process_northstar_ctrlr_import():
     # Set 'Status' based on 'Exam Score'
     df['Status'] = df['Exam Score'].apply(lambda x: 'Complete' if x == 'Passed' else 'In Progress')
 
-    # 'Course Name' can be set to 'NorthStar'
-    df['Course Name'] = 'NorthStar'
+    # 'Course Name' is set to 'Northstar'
+    df['Course Name'] = 'Northstar Digital Literacy'
 
     # 'Student Course Name' is 'Student Name - Course Name'
     df['Student Course Name'] = df['Students'] + ' - ' + df['Course Name']
 
-    # 'Certificates Earned' can be left blank or you can include the total count
+    # 'Certificates Earned' is the total number of certificates
     df['Certificates Earned'] = df['Total Certificates'].astype(int)
 
-    # 'Course Completion Date' can be set as blank or use a specific date if available
+    # 'Course Completion Date' is left blank
     df['Course Completion Date'] = ''
 
     # Select and reorder the required columns
@@ -364,9 +370,9 @@ additional_instruction_label.pack(pady=10)
 format_setting_label = Label(frame_top, text="Format Setting")
 format_setting_label.pack(side=tk.LEFT, padx=10)
 
-# 9: This defines the 2 format settings the app supports. The value here determines what update_instructions() will set additional_instruction_label to This determines if "Sort Order" setting is supported. This determines if XLSX files may be loaded
-format_combo = Combobox(frame_top, state="readonly", width=20)
-format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "NorthStar for CTRL-R Import", "General Formatting")
+# 9: This defines the format settings the app supports. The value here determines what update_instructions() will set additional_instruction_label to This determines if "Sort Order" setting is supported. This determines if XLSX files may be loaded
+format_combo = Combobox(frame_top, state="readonly", width=25)
+format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "Northstar for CTRL-R Import", "General Formatting")
 
 format_combo.current(1)
 format_combo.pack(side=tk.LEFT, padx=10)
@@ -414,7 +420,7 @@ def update_instruction(event=None):
         passing_percentage_label.grid_remove()
         passing_percentage_spin.grid_remove()
     elif format_combo.get() == "Gmetrix for CTRL-R Import":
-        additional_instruction_label.config(text="Gmetrix for CTRL-R Import - This setting takes a CSV Gmetrix student progress report as input. It removes and combines columns to create a file combatible with the import feature on the CTRL-R All Student Grades report. ")
+        additional_instruction_label.config(text="Gmetrix for CTRL-R Import - This setting takes a CSV Gmetrix student progress report as input. It removes and combines columns to create a file compatible with the import feature on the CTRL-R All Student Grades report.")
         sort_order_label.grid_remove()
         sort_order_combo.grid_remove()
         word_wrap_check.grid_remove()
@@ -438,8 +444,8 @@ def update_instruction(event=None):
         px_label.grid_remove()
         passing_percentage_label.grid_remove()
         passing_percentage_spin.grid_remove()
-    elif format_combo.get() == "NorthStar for CTRL-R Import":
-        additional_instruction_label.config(text="NorthStar for CTRL-R Import - This setting processes a NorthStar exported Excel file. It counts the total 'Certificate Earned' columns per student, sets the 'Exam Score' to 'Passed' if the student has earned 5 or more certificates, and updates the 'Status' accordingly.")
+    elif format_combo.get() == "Northstar for CTRL-R Import":
+        additional_instruction_label.config(text="Northstar for CTRL-R Import - This setting processes a Northstar exported Excel file. It counts the total 'Certificate Earned' columns per student, sets the 'Exam Score' to 'Passed' if the student has earned 5 or more certificates, and updates the 'Status' accordingly.")
         # Hide UI elements not needed
         sort_order_label.grid_remove()
         sort_order_combo.grid_remove()
@@ -501,10 +507,10 @@ passing_percentage_spin.grid(row=0, column=9, padx=(2, 2), sticky='w')
 # 19 Any time a different format setting is selected, we call update_instruction to display relevant directions
 format_combo.bind("<<ComboboxSelected>>", update_instruction)
 
-# 20 Call these to ensure instructions and checkbutton are displayed correctly initially. Go to top for coment #21
+# 20 Call these to ensure instructions and checkbutton are displayed correctly initially. Go to top for comment #21
 update_instruction()
 
 handle_resize_checkbutton()
 
 # 2: This starts the event loop of the user interface. It's at the end because we need to configure our interface before we run it. It continually checks for input on the user interface. #3 is on line 181
-root.mainloop()
+root.mainloop() 
