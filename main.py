@@ -21,12 +21,10 @@ def load_file():
     format_setting = format_combo.get()
     
     # 24: If the setting is Gmetrix, only accept CSV, else accept either format
-    if format_setting == "Gmetrix for CTRL-R Import":
-        file_type = [("Excel files", "*.xlsx;*.xls")]
-    elif format_setting == "Gmetrix Raw Data":
+    if format_setting == "Gmetrix Raw Data":
         file_type = [("CSV files", "*.csv")]
-    else:  # 25: General Formatting
-        file_type = [("Excel files", "*.xlsx"), ("CSV files", "*.csv")]
+    else:  # 25: General Formatting and imports for CTRL-R
+        file_type = [("Excel files", "*.xlsx;*.xls"), ("CSV files", "*.csv")]
 
     # 26: We create a popup filepicker and save the path they select as a global variable so we can access it anywhere in this code
     file_path = filedialog.askopenfilename(filetypes=file_type)
@@ -55,7 +53,7 @@ def save_file():
     # Get the format setting
     format_setting = format_combo.get()
 
-    if format_setting == "Gmetrix for CTRL-R Import":
+    if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import"]:
         # Write and format the column headers
         header_font = Font(bold=True)
         header_alignment = Alignment(horizontal='center', vertical='center')
@@ -89,7 +87,7 @@ def process_file():
     format_setting = format_combo.get()
 
     try:
-        if format_setting == "Gmetrix for CTRL-R Import":
+        if format_setting in ["Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import"]:
             # Read the Excel file with headers
             df = pd.read_excel(file_path)
         else:
@@ -106,6 +104,8 @@ def process_file():
         process_gmetrix()
     elif format_setting == "Gmetrix for CTRL-R Import":
         process_ctrlr_import()
+    elif format_setting == "NFR Rise Up for CTRL-R Import":
+        process_nfr_ctrlr_import()
 
 def process_gmetrix():
     global df
@@ -239,6 +239,48 @@ def process_ctrlr_import():
     # Assign the processed dataframe back to df
     df = df_output
 
+def process_nfr_ctrlr_import():
+    global df
+
+    # Check if the dataframe is loaded
+    if df is None:
+        messagebox.showerror("Error", "No file loaded. Please load an Excel file first.")
+        return
+
+    # Ensure the required columns are present
+    required_columns = ['LAST NAME', 'FIRST NAME', 'COURSE/EXAM', 'TYPE', 'STATUS', 'COMPLETED']
+    if not all(col in df.columns for col in required_columns):
+        messagebox.showerror("Error", "Input file does not contain the required columns.")
+        return
+
+    # Filter rows where 'TYPE' is 'Exam' or 'Exam Retest'
+    df = df[df['TYPE'].isin(['Exam', 'Exam Retest'])]
+
+    # Combine 'LAST NAME' and 'FIRST NAME' into 'Student Course Name' and 'Students' in the correct order
+    df['Student Course Name'] = df['LAST NAME'].astype(str).str.strip() + ' ' + df['FIRST NAME'].astype(str).str.strip()
+    df['Students'] = df['Student Course Name']
+
+    # Determine 'Status' based on 'STATUS' column
+    df['Status'] = df['STATUS'].apply(lambda x: 'Complete' if x.upper() == 'PASSED' else 'In Progress')
+
+    # 'Exam Score' is 'PASS' or 'FAIL' based on 'STATUS'
+    df['Exam Score'] = df['STATUS'].apply(lambda x: 'PASS' if x.upper() == 'PASSED' else 'FAIL')
+
+    # 'Course Name' is 'COURSE/EXAM'
+    df['Course Name'] = df['COURSE/EXAM']
+
+    # 'Course Completion Date' is 'COMPLETED'
+    df['Course Completion Date'] = df['COMPLETED']
+
+    # 'Certificates Earned' is left blank
+    df['Certificates Earned'] = ''
+
+    # Select and reorder the required columns
+    df_output = df[['Students', 'Course Name', 'Status', 'Exam Score', 'Certificates Earned', 'Course Completion Date', 'Student Course Name']]
+
+    # Assign the processed dataframe back to df
+    df = df_output
+
 # 3: This is where we initialize the main window of the app "root".
 # All elements will be attached to this root
 root = tk.Tk()
@@ -276,7 +318,7 @@ format_setting_label.pack(side=tk.LEFT, padx=10)
 
 # 9: This defines the 2 format settings the app supports. The value here determines what update_instructions() will set additional_instruction_label to This determines if "Sort Order" setting is supported. This determines if XLSX files may be loaded
 format_combo = Combobox(frame_top, state="readonly", width=20)
-format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import","General Formatting")
+format_combo['values'] = ("Gmetrix Raw Data", "Gmetrix for CTRL-R Import", "NFR Rise Up for CTRL-R Import", "General Formatting")
 format_combo.current(1)
 format_combo.pack(side=tk.LEFT, padx=10)
 
@@ -334,6 +376,19 @@ def update_instruction(event=None):
         px_label.grid_remove()
         passing_percentage_label.grid(row=0, column=0, padx=(10, 2), sticky='e')
         passing_percentage_spin.grid(row=0, column=1, padx=(2, 10), sticky='w')
+    elif format_combo.get() == "NFR Rise Up for CTRL-R Import":
+        additional_instruction_label.config(text="NFR Rise Up for CTRL-R Import - This setting takes an Excel file exported from the NFR Rise Up platform and formats it for CTRL-R import. It processes Exam and Exam Retest entries, combines columns, and creates a compatible file.")
+        # Hide UI elements not needed
+        sort_order_label.grid_remove()
+        sort_order_combo.grid_remove()
+        word_wrap_check.grid_remove()
+        center_text_check.grid_remove()
+        autosize_col_check.grid_remove()
+        resize_col_check.grid_remove()
+        column_width_spin.grid_remove()
+        px_label.grid_remove()
+        passing_percentage_label.grid_remove()
+        passing_percentage_spin.grid_remove()
 
 # 14: If the user selects the "Resize Columns" checkbutton we add a spinbox for the user to select how many points wide they want the columns. We also need to disable "Autosize" columns because the user can only choose one or the other. If resize_col_var.get() == 1 that means  "Resize Columns" is selected, so we show the spinbox for column with, and we show a label for it, and we deselect the "Autosize" checkbutton by setting it to 0. Otherwise, we hide the column size spinbox and points label.
 def handle_resize_checkbutton():
