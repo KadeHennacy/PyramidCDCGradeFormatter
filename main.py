@@ -199,56 +199,53 @@ def general_formatting(ws):
         # 49: Manually size column to user defined width if manual resize is active. Return to save_file() for #50
         elif resize_col_var.get() == 1:
             ws.column_dimensions[column].width = column_width_var.get()
-
 def process_ctrlr_import():
     global df
 
-    # Check if the dataframe is loaded
     if df is None:
         messagebox.showerror("Error", "No file loaded. Please load an Excel file first.")
         return
 
-    # Ensure the required columns are present
     required_columns = ['Course Name', 'First Name', 'Last Name', 'Score']
     if not all(col in df.columns for col in required_columns):
         messagebox.showerror("Error", "Input file does not contain the required columns.")
         return
 
-    # Remove rows where 'Course Name', 'First Name', or 'Last Name' are missing
     df = df.dropna(subset=['Course Name', 'First Name', 'Last Name'])
 
-    # Combine 'First Name' and 'Last Name' into 'Student Course Name'
-    df['Student Course Name'] = df['First Name'].astype(str).str.strip() + ' ' + df['Last Name'].astype(str).str.strip()
+    # Combine 'First Name', 'Last Name', and 'Course Name' into 'Student Course Name'
+    df['Student Course Name'] = (
+        df['First Name'].astype(str).str.strip() + ' ' +
+        df['Last Name'].astype(str).str.strip() + '-' +
+        df['Course Name'].astype(str).str.strip()
+    )
 
-    # Remove '%' from 'Score' and convert to numeric
-    df['Numeric Score'] = df['Score'].astype(str).str.rstrip('%').astype(float)
+    # 'Students' column contains only the student name
+    df['Students'] = df['First Name'].astype(str).str.strip() + ' ' + df['Last Name'].astype(str).str.strip()
 
-    # Determine 'Status' based on 'Numeric Score' and passing percentage
+    df['Score'] = df['Score'].astype(str).str.rstrip('%').astype(float)
+
     passing_percentage = passing_percentage_var.get()
-    df['Status'] = df['Numeric Score'].apply(lambda x: 'Complete' if x >= passing_percentage else 'In Progress')
+    df['Status'] = df['Score'].apply(lambda x: 'Complete' if x >= passing_percentage else 'In Progress')
 
-    # 'Course Completion Date' is not available in the input; set it as blank
+    df['Exam Score'] = df['Score']
+
+    df['Certificates Earned'] = ''
     df['Course Completion Date'] = ''
 
-    # Select and reorder the required columns
-    df_output = df[['Course Name', 'Status', 'Numeric Score', 'Student Course Name', 'Course Completion Date']]
+    df_output = df[['Students', 'Course Name', 'Status', 'Exam Score',
+                    'Certificates Earned', 'Course Completion Date', 'Student Course Name']]
 
-    # Rename 'Numeric Score' back to 'Score'
-    df_output = df_output.rename(columns={'Numeric Score': 'Score'})
-
-    # Assign the processed dataframe back to df
     df = df_output
 
 def process_nfr_ctrlr_import():
     global df
 
-    # Check if the dataframe is loaded
     if df is None:
         messagebox.showerror("Error", "No file loaded. Please load an Excel file first.")
         return
 
-    # Ensure the required columns are present
-    required_columns = ['LAST NAME', 'FIRST NAME', 'COURSE/EXAM', 'TYPE', 'STATUS', 'COMPLETED']
+    required_columns = ['FIRST NAME', 'LAST NAME', 'COURSE/EXAM', 'TYPE', 'STATUS', 'COMPLETED']
     if not all(col in df.columns for col in required_columns):
         messagebox.showerror("Error", "Input file does not contain the required columns.")
         return
@@ -256,11 +253,16 @@ def process_nfr_ctrlr_import():
     # Filter rows where 'TYPE' is 'Exam' or 'Exam Retest'
     df = df[df['TYPE'].isin(['Exam', 'Exam Retest'])]
 
-    # Combine 'LAST NAME' and 'FIRST NAME' into 'Student Course Name' and 'Students' in the correct order
-    df['Student Course Name'] = df['LAST NAME'].astype(str).str.strip() + ' ' + df['FIRST NAME'].astype(str).str.strip()
-    df['Students'] = df['Student Course Name']
+    # Combine 'First Name', 'Last Name', and 'Course Name' into 'Student Course Name'
+    df['Student Course Name'] = (
+        df['FIRST NAME'].astype(str).str.strip() + ' ' +
+        df['LAST NAME'].astype(str).str.strip() + '-' +
+        df['COURSE/EXAM'].astype(str).str.strip()
+    )
 
-    # Determine 'Status' based on 'STATUS' column
+    # 'Students' column contains only the student name
+    df['Students'] = df['FIRST NAME'].astype(str).str.strip() + ' ' + df['LAST NAME'].astype(str).str.strip()
+
     df['Status'] = df['STATUS'].apply(lambda x: 'Complete' if x.upper() == 'PASSED' else 'In Progress')
 
     # 'Exam Score' is 'PASS' or 'FAIL' based on 'STATUS'
@@ -275,10 +277,9 @@ def process_nfr_ctrlr_import():
     # 'Certificates Earned' is left blank
     df['Certificates Earned'] = ''
 
-    # Select and reorder the required columns
-    df_output = df[['Students', 'Course Name', 'Status', 'Exam Score', 'Certificates Earned', 'Course Completion Date', 'Student Course Name']]
+    df_output = df[['Students', 'Course Name', 'Status', 'Exam Score',
+                    'Certificates Earned', 'Course Completion Date', 'Student Course Name']]
 
-    # Assign the processed dataframe back to df
     df = df_output
 
 # 3: This is where we initialize the main window of the app "root".
