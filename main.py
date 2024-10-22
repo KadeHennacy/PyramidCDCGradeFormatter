@@ -232,7 +232,8 @@ def process_northstar_ctrlr_import():
     df['Certificates Earned'] = df['Total Certificates'].astype(int)
 
     # 24: Set 'Exam Score' and 'Status' based on total certificates.
-    df['Exam Score'] = df['Total Certificates'].apply(lambda x: 'Passed' if x >= 5 else 'Failed')
+    passing_certificates = northstar_passing_certificates_var.get()
+    df['Exam Score'] = df['Total Certificates'].apply(lambda x: 'Passed' if x >= passing_certificates else 'Failed')
     df['Status'] = df['Exam Score'].apply(lambda x: 'Complete' if x == 'Passed' else 'In Progress')
     df['Course Completion Date'] = ''
 
@@ -348,6 +349,8 @@ def update_instruction(event=None):
         show_formatting_options()
         passing_percentage_label.grid_remove()
         passing_percentage_spin.grid_remove()
+        northstar_passing_certificates_label.grid_remove()
+        northstar_passing_certificates_spin.grid_remove()
     elif format_setting == "General Formatting":
         additional_instruction_label.config(text="General Formatting - This setting takes any CSV or XLSX file and sizes columns to 18 and centers and wraps text.")
         sort_order_label.grid_remove()
@@ -356,6 +359,8 @@ def update_instruction(event=None):
         show_formatting_options()
         passing_percentage_label.grid_remove()
         passing_percentage_spin.grid_remove()
+        northstar_passing_certificates_label.grid_remove()
+        northstar_passing_certificates_spin.grid_remove()
     elif format_setting == "Gmetrix for CTRL-R Import":
         additional_instruction_label.config(text="Gmetrix for CTRL-R Import - This setting takes a CSV Gmetrix student progress report as input. It removes and combines columns to create a file compatible with the import feature on the CTRL-R All Student Grades report.")
         hide_all_formatting_options()
@@ -365,8 +370,10 @@ def update_instruction(event=None):
         additional_instruction_label.config(text="NFR Rise Up for CTRL-R Import - This setting takes an Excel file exported from the NFR Rise Up platform and formats it for CTRL-R import. It processes Exam and Exam Retest entries, combines columns, and creates a compatible file.")
         hide_all_formatting_options()
     elif format_setting == "NorthStar for CTRL-R Import":
-        additional_instruction_label.config(text="NorthStar for CTRL-R Import - This setting processes a NorthStar exported Excel file. It counts the total 'Certificate Earned' columns per student, sets the 'Exam Score' to 'Passed' if the student has earned 5 or more certificates, and updates the 'Status' accordingly.")
+        additional_instruction_label.config(text="NorthStar for CTRL-R Import - This setting processes a NorthStar exported Excel file. It counts the total 'Certificate Earned' columns per student, sets the 'Exam Score' to 'Passed' if the student has earned the specified number of certificates, and updates the 'Status' accordingly.")
         hide_all_formatting_options()
+        northstar_passing_certificates_label.grid(row=0, column=0, padx=(10, 2), sticky='e')
+        northstar_passing_certificates_spin.grid(row=0, column=1, padx=(2, 10), sticky='w')
 
 # Function to show formatting options.
 def show_formatting_options():
@@ -393,6 +400,8 @@ def hide_all_formatting_options():
     px_label.grid_remove()
     passing_percentage_label.grid_remove()
     passing_percentage_spin.grid_remove()
+    northstar_passing_certificates_label.grid_remove()
+    northstar_passing_certificates_spin.grid_remove()
 
 # Function to handle the 'Resize Columns' checkbutton.
 def handle_resize_checkbutton():
@@ -418,6 +427,7 @@ autosize_col_var = IntVar(value=1)
 resize_col_var = IntVar(value=0)
 column_width_var = IntVar(value=18)
 passing_percentage_var = IntVar(value=70)
+northstar_passing_certificates_var = IntVar(value=5)
 
 # 36: Create UI elements for formatting options.
 word_wrap_check = Checkbutton(frame_sort, text="Word Wrap", variable=word_wrap_var)
@@ -428,6 +438,10 @@ column_width_spin = Spinbox(frame_sort, from_=10, to=50, textvariable=column_wid
 px_label = Label(frame_sort, text="Points")
 passing_percentage_label = Label(frame_sort, text="Passing Percentage")
 passing_percentage_spin = Spinbox(frame_sort, from_=0, to=100, textvariable=passing_percentage_var, width=5)
+
+# New UI elements for NorthStar certificates needed to pass
+northstar_passing_certificates_label = Label(frame_sort, text="Certificates Needed to Pass")
+northstar_passing_certificates_spin = Spinbox(frame_sort, from_=0, to=100, textvariable=northstar_passing_certificates_var, width=5)
 
 # 37: Position the formatting options in the grid.
 word_wrap_check.grid(row=0, column=2, padx=(10, 2), sticky='w')
