@@ -219,7 +219,7 @@ def process_northstar_ctrlr_import():
 
     # 22: Combine 'First Name' and 'Last Name' to create 'Students' and 'Student Course Name'.
     df['Students'] = df['First Name'].astype(str).str.strip() + ' ' + df['Last Name'].astype(str).str.strip()
-    df['Course Name'] = 'NorthStar'
+    df['Course Name'] = 'Northstar Digital Literacy'
     df['Student Course Name'] = df['Students'] + ' - ' + df['Course Name']
 
     # 23: Identify 'Certificate Earned' columns and count total certificates.
